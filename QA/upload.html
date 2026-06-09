@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upload Report</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Upload Report</h1>
+      <p>Upload a full report, daily report, or Email retention record</p>
+    </div>
+
+    <div class="topbar-actions">
+      <a class="topbar-btn" href="index.html">Home</a>
+      <a class="topbar-btn" href="query.html">Query</a>
+
+      <div id="userStatus" class="status-pill">User: not signed in</div>
+      <button type="button" id="openUserLoginBtn" class="topbar-btn">User sign in</button>
+
+      <div id="adminStatus" class="status-pill">Admin: not signed in</div>
+      <button type="button" id="openAdminLoginBtn" class="topbar-btn">Admin sign in</button>
+    </div>
+  </header>
+
+  <dialog id="userLoginDialog" class="login-dialog">
+    <form id="userLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>User sign in</h2>
+          <p class="hint">Used when uploading reports.</p>
+        </div>
+        <button type="button" id="closeUserLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Username
+        <input id="userUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Password
+        <input id="userPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as user</button>
+        <button type="button" id="clearUserBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="userLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <dialog id="adminLoginDialog" class="login-dialog">
+    <form id="adminLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>Admin sign in</h2>
+          <p class="hint">Admin sign-in is available from every page.</p>
+        </div>
+        <button type="button" id="closeAdminLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Admin username
+        <input id="adminUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Admin password
+        <input id="adminPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as admin</button>
+        <button type="button" id="clearAdminBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="adminLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <main class="container">
+    <section class="card wide">
+      <h2>User: upload report</h2>
+      <p class="hint">
+        LBP information is taken from the signed-in user automatically. The address is optional because the BCO number already identifies the consent record.
+      </p>
+
+      <form id="reportForm" class="form grid-form" novalidate>
+        <div class="section-title span-2">Report type</div>
+
+        <label>
+          Upload type
+          <select id="reportKind">
+            <option value="Full">Full report</option>
+            <option value="Daily">Daily report</option>
+            <option value="EmailRecord">Email retention</option>
+          </select>
+        </label>
+
+        <div id="reportTypeHint" class="info-box"></div>
+
+        <div class="section-title span-2">Required information</div>
+
+        <label class="full-report-only">
+          Inspection type
+          <select id="inspectionTypeCode"></select>
+        </label>
+
+        <label>
+          BCO number
+          <input id="bcoNumber" type="text" placeholder="e.g. BCO10381810" />
+        </label>
+
+        <label>
+          Inspection date/time
+          <input id="inspectionDate" type="datetime-local" />
+        </label>
+
+        <label class="span-2">
+          Inspection address <span class="optional-text">optional</span>
+          <input id="inspectionAddress" type="text" placeholder="Optional because the BCO identifies the site" />
+        </label>
+
+        <div class="section-title span-2 email-record-only hidden">Email retention details</div>
+
+        <label class="email-record-only hidden">
+          Email to
+          <input id="emailTo" type="email" placeholder="recipient@example.com" />
+        </label>
+
+        <label class="email-record-only hidden">
+          Title
+          <input id="emailTitle" type="text" placeholder="Email title / subject" />
+        </label>
+
+        <div class="section-title span-2 full-report-only">Inspection details</div>
+
+        <label class="full-report-only">
+          Scope
+          <select id="scope">
+            <option value="Full">Full</option>
+            <option value="Partial">Partial</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Site safety
+          <select id="siteSafety">
+            <option value="Safe">Safe</option>
+            <option value="Unsafe">Unsafe</option>
+            <option value="N/A">N/A</option>
+          </select>
+        </label>
+
+        <label class="span-2 full-report-only">
+          Partial description
+          <input id="partialDescription" type="text" placeholder="Required if scope is Partial" />
+        </label>
+
+        <label class="full-report-only">
+          Consent documents on site
+          <select id="consentDocumentsOnSite">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Previous inspection history checked
+          <select id="previousInspectionHistoryChecked">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Involves restricted building work
+          <select id="involvesRestrictedBuildingWork">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Work completed in accordance with plans
+          <select id="workCompletedInAccordanceWithPlans">
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Inspection outcome
+          <select id="inspectionOutcome">
+            <option value="Pass">Pass</option>
+            <option value="Partial Pass">Partial Pass</option>
+            <option value="Fail">Fail</option>
+            <option value="N/A">N/A</option>
+          </select>
+        </label>
+
+        <label class="full-report-only">
+          Inspection duration minutes
+          <input id="inspectionDurationMinutes" type="number" min="0" max="480" value="20" />
+        </label>
+
+        <div id="inspectionWarning" class="warning-box span-2 hidden full-report-only"></div>
+
+        <div class="section-title span-2 full-report-only">Outcome details</div>
+
+        <label class="span-2 full-report-only">
+          Inspection summary
+          <textarea id="inspectionSummary" rows="3" placeholder="Summary of inspection..."></textarea>
+        </label>
+
+        <label class="span-2 full-report-only">
+          Additional comments
+          <textarea id="additionalComments" rows="4" placeholder="Additional comments..."></textarea>
+        </label>
+
+        <label class="span-2 full-report-only">
+          Items resolved from history
+          <textarea id="itemsResolvedFromHistory" rows="2"></textarea>
+        </label>
+
+        <label class="span-2 full-report-only">
+          Items to be resolved
+          <textarea id="itemsToBeResolved" rows="3" placeholder="Required if outcome is Partial Pass or Fail"></textarea>
+        </label>
+
+        <label class="full-report-only">
+          Next inspection required
+          <select id="nextInspectionRequired"></select>
+        </label>
+
+        <div class="section-title span-2 full-report-only">People</div>
+
+        <label class="full-report-only">
+          Person on site
+          <input id="personOnSiteName" type="text" />
+        </label>
+
+        <label class="full-report-only">
+          Recipient email
+          <input id="recipientEmail" type="email" />
+        </label>
+
+        <label class="full-report-only">
+          Inspector name
+          <input id="inspectorName" type="text" />
+        </label>
+
+        <label class="full-report-only">
+          Inspector email
+          <input id="inspectorEmail" type="email" />
+        </label>
+
+        <label class="full-report-only">
+          Inspector phone
+          <input id="inspectorPhoneNumber" type="text" />
+        </label>
+
+        <div class="section-title span-2 full-report-only">Checklist items</div>
+
+        <div class="span-2 panel full-report-only">
+          <div id="checklistContainer"></div>
+          <button type="button" id="addChecklistBtn" class="secondary">Add checklist item</button>
+        </div>
+
+        <div class="section-title span-2 full-report-only">Required documents</div>
+
+        <div class="span-2 panel full-report-only">
+          <div id="documentsContainer"></div>
+          <button type="button" id="addDocumentBtn" class="secondary">Add document</button>
+        </div>
+
+        <div class="section-title span-2 full-report-only">Minor variations</div>
+        <div class="span-2 panel full-report-only">
+          <div id="minorVariationContainer"></div>
+          <button type="button" id="addMinorVariationBtn" class="secondary">Add minor variation</button>
+        </div>
+
+        <div class="section-title span-2">Photos</div>
+
+        <div class="span-2 panel">
+          <label>
+            Photos
+            <input id="photoFiles" type="file" accept="image/*,.heic,.heif" multiple />
+          </label>
+
+          <div class="button-row photo-actions">
+            <button type="button" id="addSelectedPhotosBtn" class="secondary">Add selected photos</button>
+            <button type="button" id="clearPhotosBtn" class="secondary">Clear photos</button>
+          </div>
+
+          <p id="photoMessage" class="message"></p>
+          <div id="selectedPhotosList" class="selected-photos-list photo-description-list"></div>
+        </div>
+
+        <div class="button-row span-2">
+          <button type="submit">Upload report</button>
+          <button type="button" id="fillReportSampleBtn" class="secondary">Fill sample report</button>
+          <button type="button" id="previewJsonBtn" class="secondary">Preview JSON</button>
+        </div>
+
+        <p id="uploadMessage" class="message span-2"></p>
+        <pre id="jsonPreview" class="json-preview span-2 hidden"></pre>
+      </form>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

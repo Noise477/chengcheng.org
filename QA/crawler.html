@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crawler</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Crawler</h1>
+      <p>Admin-only crawler tool</p>
+    </div>
+
+    <div class="topbar-actions">
+      <a class="topbar-btn" href="index.html">Home</a>
+      <a class="topbar-btn nav-link" href="upload.html">Upload</a>
+      <a class="topbar-btn" href="query.html">Query</a>
+
+      <div id="adminStatus" class="status-pill">Admin: not signed in</div>
+      <button type="button" id="openAdminLoginBtn" class="topbar-btn">Admin sign in</button>
+    </div>
+  </header>
+
+  <dialog id="adminLoginDialog" class="login-dialog">
+    <form id="adminLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>Admin sign in</h2>
+          <p class="hint">Crawler access requires administrator permission.</p>
+        </div>
+        <button type="button" id="closeAdminLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Admin username
+        <input id="adminUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Admin password
+        <input id="adminPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as admin</button>
+        <button type="button" id="clearAdminBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="adminLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <main class="container">
+    <section id="adminRequiredCard" class="card wide">
+      <h2>Admin sign in required</h2>
+      <p class="hint">Please sign in as an administrator before using the crawler.</p>
+    </section>
+
+    <section id="crawlerPanel" class="card wide hidden">
+        <details id="crawlerSettingsDetails" class="crawler-details settings-details" open>
+            <summary>Admin crawler settings</summary>
+
+            <p class="hint settings-hint">
+                Council account and default contact details are saved to the current administrator account.
+            </p>
+
+            <form id="crawlerSettingsForm" class="form grid-form">
+                <div class="section-title span-2">Council account</div>
+
+                <label>
+                Council username
+                <input id="settingsCouncilUsername" type="text" autocomplete="username" />
+                </label>
+
+                <label>
+                Council password
+                <input
+                    id="settingsCouncilPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Leave blank to keep saved password"
+                />
+                </label>
+
+                <div id="councilPasswordSavedMessage" class="info-box span-2 hidden"></div>
+
+                <div class="section-title span-2">Default contact details</div>
+
+                <label>
+                Contact name
+                <input id="settingsContactName" type="text" />
+                </label>
+
+                <label>
+                Contact mobile
+                <input id="settingsContactMobile" type="text" />
+                </label>
+
+                <label>
+                Contact email
+                <input id="settingsContactEmail" type="email" />
+                </label>
+
+                <label class="span-2">
+                Contact notes
+                <textarea id="settingsContactNotes" rows="3"></textarea>
+                </label>
+
+                <div class="button-row span-2">
+                <button type="submit">Save crawler settings</button>
+                </div>
+
+                <p id="crawlerSettingsMessage" class="message span-2"></p>
+            </form>
+            </details>
+
+        <div class="section-title span-2 crawler-booking-divider"></div>
+
+        <h2>Crawler booking</h2>
+      <p class="hint">
+        Enter the BCO number and preferred inspection window. Debug screenshots are disabled by default.
+      </p>
+
+      <form id="crawlerForm" class="form grid-form">
+        <div class="section-title span-2">Basic details</div>
+
+        <label>
+          BCO number
+          <input id="crawlerBco" type="text" placeholder="e.g. BCO10355968" required />
+        </label>
+
+        <label>
+          Inspection type
+          <select id="crawlerInspectionType" required>
+            <option value="IME">Site meeting (IME)</option>
+            <option value="ICL">Cladding (ICL)</option>
+            <option value="IFG">Framing (IFG)</option>
+            <option value="IPB">Preline building (IPB)</option>
+            <option value="ISF">Concrete floor slab (ISF)</option>
+            <option value="IFO">Foundations / footings (IFO)</option>
+            <option value="IF1">Final inspection - residential (IF1)</option>
+            <option value="IF2">Final inspection - commercial (IF2)</option>
+          </select>
+        </label>
+
+        <div class="section-title span-2">Preferred time slots</div>
+
+        <label>
+            Preferred date
+            <input id="preferredDate" type="date" />
+        </label>
+
+        <label>
+            Preferred time window
+            <select id="preferredWindow">
+                <option value="morning">Morning</option>
+                <option value="afternoon">Afternoon</option>
+                <option value="full_day">Full day</option>
+            </select>
+        </label>
+
+        <div class="button-row span-2">
+            <button type="button" id="addTimeSlotBtn" class="secondary">Add time slot</button>
+        </div>
+
+        <div id="selectedTimeSlots" class="selected-time-slots span-2"></div>
+
+        <details class="span-2 crawler-details">
+          <summary>Contact details override</summary>
+
+          <div class="details-grid">
+            <label>
+              Contact name
+              <input id="contactName" type="text" placeholder="Default from admin profile" />
+            </label>
+
+            <label>
+              Contact mobile
+              <input id="contactMobile" type="text" placeholder="Default from admin profile" />
+            </label>
+
+            <label>
+              Contact email
+              <input id="contactEmail" type="email" placeholder="Default from admin profile" />
+            </label>
+
+            <label class="span-2">
+              Contact notes
+              <textarea id="contactNotes" rows="3" placeholder="Optional notes"></textarea>
+            </label>
+          </div>
+        </details>
+
+        <details class="span-2 crawler-details">
+          <summary>Advanced options</summary>
+
+          <label class="checkbox-label">
+            <input id="safeMode" type="checkbox" />
+            Safe mode
+          </label>
+
+          <label class="checkbox-label">
+            <input id="debugEnabled" type="checkbox" />
+            Save debug screenshots / HTML
+          </label>
+        </details>
+
+        <div class="button-row span-2">
+          <button type="submit">Start crawler</button>
+          <button type="button" id="stopCrawlerBtn" class="secondary">Stop crawler</button>
+        </div>
+
+        <p id="crawlerMessage" class="message span-2"></p>
+      </form>
+    </section>
+
+    <section id="crawlerLogCard" class="card wide hidden">
+        <h2>Crawler progress</h2>
+
+        <div id="crawlerStatusSummary" class="crawler-status-summary"></div>
+
+        <div id="crawlerTimeline" class="crawler-timeline"></div>
+
+        <details class="crawler-details raw-log-details">
+            <summary>Technical details</summary>
+            <pre id="crawlerLog" class="json-preview"></pre>
+        </details>
+    </section>
+  </main>
+
+  <script src="crawler.js"></script>
+</body>
+</html>

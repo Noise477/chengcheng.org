@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>QA Report System</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>QA Report System</h1>
+      <p>Inspection report portal</p>
+    </div>
+
+    <div class="topbar-actions">
+      <div id="homeUserStatus" class="status-pill">User: not signed in</div>
+      <button type="button" id="openHomeUserLoginBtn" class="topbar-btn">User sign in</button>
+      <div id="homeAdminStatus" class="status-pill">Admin: not signed in</div>
+      <button type="button" id="openHomeAdminLoginBtn" class="topbar-btn">Admin sign in</button>
+    </div>
+  </header>
+
+  <dialog id="homeUserLoginDialog" class="login-dialog">
+    <form id="homeUserLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>User sign in</h2>
+          <p class="hint">User accounts can upload and view their own reports.</p>
+        </div>
+        <button type="button" id="closeHomeUserLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Username
+        <input id="homeUserUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Password
+        <input id="homeUserPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as user</button>
+        <button type="button" id="clearHomeUserBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="homeUserLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <dialog id="homeAdminLoginDialog" class="login-dialog">
+    <form id="homeAdminLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>Admin sign in</h2>
+          <p class="hint">Admin accounts can register users and manage crawler settings.</p>
+        </div>
+        <button type="button" id="closeHomeAdminLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Admin username
+        <input id="homeAdminUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Admin password
+        <input id="homeAdminPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as admin</button>
+        <button type="button" id="clearHomeAdminBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="homeAdminLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <main class="home-container">
+    <section class="home-card">
+      <h2>Upload inspection report</h2>
+      <p>Create a new inspection report with photos, checklist items, documents, and minor variations.</p>
+      <a class="home-link" href="upload.html">Go to upload</a>
+    </section>
+
+    <section class="home-card">
+      <h2>Search reports</h2>
+      <p>Search reports by BCO number, inspection date, address, or inspection type.</p>
+      <a class="home-link" href="query.html">Go to search</a>
+    </section>
+
+    <section class="home-card">
+      <h2>Crawler</h2>
+      <p>Run the admin-only crawler for council inspection booking.</p>
+      <a class="home-link" href="crawler.html">Go to crawler</a>
+    </section>
+  </main>
+
+  <main class="container">
+    <section id="homeAdminPanel" class="card wide hidden">
+      <h2>Admin: register user</h2>
+      <p class="hint">
+        Create a user account and assign verified LBP details. These details will be attached to reports automatically.
+      </p>
+
+      <form id="homeRegisterUserForm" class="form grid-form">
+        <label>
+          Username
+          <input id="registerUserName" type="text" required />
+        </label>
+
+        <label>
+          Password
+          <input id="registerPassword" type="password" required />
+        </label>
+
+        <label>
+          Email
+          <input id="registerEmail" type="email" required />
+        </label>
+
+        <label>
+          LBP name
+          <input id="registerLbpName" type="text" required />
+        </label>
+
+        <label>
+          LBP number
+          <input id="registerLbpNumber" type="text" placeholder="e.g. 123456" inputmode="numeric" required />
+        </label>
+
+        <div class="span-2">
+            <div class="field-label">LBP licence classes</div>
+
+            <div id="registerLbpClassGroup" class="checkbox-grid">
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Design" />
+                Design
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Site" />
+                Site
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Carpentry" />
+                Carpentry
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Roofing" />
+                Roofing
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="External Plastering" />
+                External Plastering
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Bricklaying and Blocklaying" />
+                Bricklaying and Blocklaying
+                </label>
+
+                <label class="checkbox-row">
+                <input type="checkbox" name="registerLbpClass" value="Foundations" />
+                Foundations
+                </label>
+            </div>
+            </div>
+
+        <div class="button-row span-2">
+          <button type="submit">Register user</button>
+          <button type="button" id="clearRegisterUserBtn" class="secondary">Clear</button>
+        </div>
+
+        <p id="registerUserMessage" class="message span-2"></p>
+      </form>
+    </section>
+  </main>
+
+  <script src="index.js"></script>
+</body>
+</html>

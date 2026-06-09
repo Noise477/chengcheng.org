@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Search Reports</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Search Reports</h1>
+      <p>Find full reports, daily reports, and Email retention records</p>
+    </div>
+
+    <div class="topbar-actions">
+      <a class="topbar-btn" href="index.html">Home</a>
+      <a class="topbar-btn" href="upload.html">Upload</a>
+      <a class="topbar-btn" href="crawler.html">Crawler</a>
+
+      <div id="userStatus" class="status-pill">User: not signed in</div>
+      <button type="button" id="openUserLoginBtn" class="topbar-btn">User sign in</button>
+
+      <div id="adminStatus" class="status-pill">Admin: not signed in</div>
+      <button type="button" id="openAdminLoginBtn" class="topbar-btn">Admin sign in</button>
+    </div>
+  </header>
+
+  <dialog id="userLoginDialog" class="login-dialog">
+    <form id="userLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>User sign in</h2>
+          <p class="hint">User accounts can search their own reports.</p>
+        </div>
+        <button type="button" id="closeUserLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Username
+        <input id="userUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Password
+        <input id="userPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as user</button>
+        <button type="button" id="clearUserBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="userLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <dialog id="adminLoginDialog" class="login-dialog">
+    <form id="adminLoginForm" class="form dialog-form">
+      <div class="dialog-header">
+        <div>
+          <h2>Admin sign in</h2>
+          <p class="hint">Admin accounts can search all reports.</p>
+        </div>
+        <button type="button" id="closeAdminLoginBtn" class="icon-btn">×</button>
+      </div>
+
+      <label>
+        Admin username
+        <input id="adminUsername" type="text" autocomplete="username" required />
+      </label>
+
+      <label>
+        Admin password
+        <input id="adminPassword" type="password" autocomplete="current-password" required />
+      </label>
+
+      <div class="button-row">
+        <button type="submit">Sign in as admin</button>
+        <button type="button" id="clearAdminBtn" class="secondary">Clear</button>
+      </div>
+
+      <p id="adminLoginMessage" class="message"></p>
+    </form>
+  </dialog>
+
+  <main class="container">
+    <section class="card wide">
+      <h2>Search reports</h2>
+      <p class="hint">Use one or more filters. Leave fields blank to search broadly.</p>
+
+      <form id="reportSearchForm" class="form grid-form">
+        <label>
+          Search as
+          <select id="searchAccountType">
+            <option value="user">User</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+
+        <label>
+          Report type
+          <select id="searchReportKind">
+            <option value="">Any type</option>
+            <option value="Full">Full report</option>
+            <option value="Daily">Daily report</option>
+            <option value="EmailRecord">Email retention</option>
+          </select>
+        </label>
+
+        <label>
+          BCO number
+          <input id="searchBco" type="text" placeholder="e.g. BCO10381810" />
+        </label>
+
+        <label>
+          Inspection type
+          <select id="searchInspectionType">
+            <option value="">Any type</option>
+            <option value="PCO">Pre-construction meeting (PCO)</option>
+            <option value="IME">Site meeting (IME)</option>
+            <option value="IFO">Foundations / siting / piles / footings (IFO)</option>
+            <option value="ICB">Concrete block / reinforced concrete (ICB)</option>
+            <option value="ISF">Concrete floor slab (ISF)</option>
+            <option value="IFG">Framing (IFG)</option>
+            <option value="ICA">Wrap and cavity (ICA)</option>
+            <option value="ICL">Cladding (ICL)</option>
+            <option value="IPB">Preline building (IPB)</option>
+            <option value="IPP">Preline / under-slab plumbing (IPP)</option>
+            <option value="IPL">Post line (IPL)</option>
+            <option value="ITK">Waterproofing / membrane / tanking (ITK)</option>
+            <option value="IDT">Drainage (IDT)</option>
+            <option value="ARE">Audit residential (ARE)</option>
+            <option value="ACO">Audit commercial (ACO)</option>
+            <option value="IF1">Final inspection - residential (IF1)</option>
+            <option value="IF2">Final inspection - commercial (IF2)</option>
+            <option value="SWP">Pool fencing (SWP)</option>
+            <option value="CPU">Certificate for Public Use (CPU)</option>
+          </select>
+        </label>
+
+        <label>
+          From date
+          <input id="searchFromDate" type="date" />
+        </label>
+
+        <label>
+          To date
+          <input id="searchToDate" type="date" />
+        </label>
+
+        <label class="span-2">
+          Address contains
+          <input id="searchAddress" type="text" placeholder="e.g. Te Atatu" />
+        </label>
+
+        <div class="button-row span-2">
+          <button type="submit">Search</button>
+          <button type="button" id="clearSearchBtn" class="secondary">Clear filters</button>
+        </div>
+
+        <p id="searchMessage" class="message span-2"></p>
+      </form>
+    </section>
+
+    <section id="searchResultsCard" class="card wide hidden">
+      <h2>Results</h2>
+      <div id="reportResults" class="report-results"></div>
+    </section>
+
+    <section id="reportDetailsCard" class="card wide hidden">
+      <div class="details-header">
+        <h2>Report details</h2>
+        <div class="button-row">
+          <button type="button" id="downloadPdfBtn" class="secondary hidden">Download PDF</button>
+          <button type="button" id="closeDetailsBtn" class="secondary">Close details</button>
+        </div>
+      </div>
+
+      <div id="reportDetails"></div>
+    </section>
+  </main>
+
+  <dialog id="photoModal" class="photo-modal">
+    <button type="button" id="closePhotoModalBtn" class="photo-modal-close">×</button>
+    <img id="photoModalImage" src="" alt="Expanded inspection photo" />
+    <p id="photoModalDescription"></p>
+  </dialog>
+
+  <script src="query.js"></script>
+</body>
+</html>
