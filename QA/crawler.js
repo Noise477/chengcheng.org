@@ -49,9 +49,6 @@ function init() {
   crawlerSettingsForm.addEventListener("submit", handleSaveCrawlerSettings);
   stopCrawlerBtn.addEventListener("click", handleStopCrawler);
   addTimeSlotBtn.addEventListener("click", addTimeSlot);
-
-  window.addEventListener("beforeunload", stopCrawlerOnPageExit);
-  stopLeftoverCrawlerJobOnLoad();
 }
 
 async function handleAdminLogin(event) {
@@ -91,6 +88,7 @@ async function handleAdminLogin(event) {
     adminLoginDialog.close();
 
     await loadAdminCrawlerSettings();
+    await loadActiveCrawlerJob();
   } catch {
     showMessage(adminLoginMessage, "Cannot connect to backend. Check dotnet run and CORS.", "error");
   }
@@ -263,6 +261,13 @@ async function handleStartCrawler(event) {
     return;
   }
 
+  const activeJobFound = await loadActiveCrawlerJob({ silentWhenNone: true });
+
+  if (activeJobFound) {
+    showMessage(crawlerMessage, "A crawler job is already running for this admin account. The existing job is shown below.", "ok");
+    return;
+  }
+
   if (crawlerTimeSlots.length === 0) {
     showMessage(crawlerMessage, "Please add at least one preferred time slot.", "error");
     return;
@@ -314,7 +319,7 @@ async function handleStartCrawler(event) {
     currentCrawlerJobId = result.job_id || result.jobId || result.id;
 
     if (currentCrawlerJobId) {
-        sessionStorage.setItem("qa_current_crawler_job_id", currentCrawlerJobId);
+        localStorage.setItem("qa_current_crawler_job_id", currentCrawlerJobId);
     }
 
     if (!currentCrawlerJobId) {
@@ -449,7 +454,7 @@ async function pollCrawlerJob(jobId) {
     ) {
         stopCrawlerPolling();
         currentCrawlerJobId = null;
-        sessionStorage.removeItem("qa_current_crawler_job_id");
+        localStorage.removeItem("qa_current_crawler_job_id");
 
         showMessage(
             crawlerMessage,
@@ -920,7 +925,7 @@ function formatTimeSlotLabel(slot) {
   return `${slot.date} · ${windowLabels[slot.window] || slot.window}`;
 }
 
-function loadSavedAdminAuth() {
+async function loadSavedAdminAuth() {
   const adminUsername = sessionStorage.getItem("qa_admin_username");
   const adminPassword = sessionStorage.getItem("qa_admin_password");
 
@@ -935,7 +940,92 @@ function loadSavedAdminAuth() {
   updateAdminStatus();
 
   if (adminUsername && adminPassword) {
-    loadAdminCrawlerSettings();
+    await loadAdminCrawlerSettings();
+    await loadActiveCrawlerJob();
+  }
+}
+
+async function loadActiveCrawlerJob(options = {}) {
+  const silentWhenNone = Boolean(options.silentWhenNone);
+
+  const adminUsername = sessionStorage.getItem("qa_admin_username");
+  const adminPassword = sessionStorage.getItem("qa_admin_password");
+
+  if (!adminUsername || !adminPassword) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/webapi/CrawlerJobs/Active`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Basic ${btoa(`${adminUsername}:${adminPassword}`)}`
+      }
+    });
+
+    const text = await response.text();
+
+    if (response.status === 404) {
+      if (!silentWhenNone) {
+        showMessage(crawlerMessage, "Active crawler endpoint has not been added yet.", "error");
+      }
+      return false;
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      if (!silentWhenNone) {
+        showMessage(crawlerMessage, "Admin permission required.", "error");
+      }
+      return false;
+    }
+
+    if (!response.ok) {
+      if (!silentWhenNone) {
+        showMessage(crawlerMessage, `Could not check active crawler (${response.status}): ${text}`, "error");
+      }
+      return false;
+    }
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      if (!silentWhenNone) {
+        showMessage(crawlerMessage, "Active crawler response was not JSON.", "error");
+      }
+      return false;
+    }
+
+    const job = data.job || null;
+
+    if (!data.has_active_job || !job) {
+      currentCrawlerJobId = null;
+      localStorage.removeItem("qa_current_crawler_job_id");
+      return false;
+    }
+
+    currentCrawlerJobId = job.job_id || job.jobId || job.id;
+
+    if (!currentCrawlerJobId) {
+      return false;
+    }
+
+    localStorage.setItem("qa_current_crawler_job_id", currentCrawlerJobId);
+
+    renderCrawlerJob(job);
+    startCrawlerPolling(currentCrawlerJobId);
+
+    if (!silentWhenNone) {
+      showMessage(crawlerMessage, "An active crawler job was found for this admin account.", "ok");
+    }
+
+    return true;
+  } catch {
+    if (!silentWhenNone) {
+      showMessage(crawlerMessage, "Could not connect to backend to check active crawler.", "error");
+    }
+    return false;
   }
 }
 
@@ -1011,59 +1101,3 @@ function showMessage(element, text, type) {
   element.className = `message ${type}`;
 }
 
-function stopCrawlerOnPageExit() {
-  const jobId = currentCrawlerJobId || sessionStorage.getItem("qa_current_crawler_job_id");
-
-  if (!jobId) {
-    return;
-  }
-
-  const adminUsername = sessionStorage.getItem("qa_admin_username");
-  const adminPassword = sessionStorage.getItem("qa_admin_password");
-
-  if (!adminUsername || !adminPassword) {
-    return;
-  }
-
-  stopCrawlerPolling();
-
-  fetch(`${API_BASE_URL}/webapi/CrawlerJobs/${encodeURIComponent(jobId)}/Stop`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${btoa(`${adminUsername}:${adminPassword}`)}`
-    },
-    keepalive: true
-  });
-
-  sessionStorage.removeItem("qa_current_crawler_job_id");
-}
-
-async function stopLeftoverCrawlerJobOnLoad() {
-  const jobId = sessionStorage.getItem("qa_current_crawler_job_id");
-
-  if (!jobId) {
-    return;
-  }
-
-  const adminUsername = sessionStorage.getItem("qa_admin_username");
-  const adminPassword = sessionStorage.getItem("qa_admin_password");
-
-  if (!adminUsername || !adminPassword) {
-    sessionStorage.removeItem("qa_current_crawler_job_id");
-    return;
-  }
-
-  try {
-    await fetch(`${API_BASE_URL}/webapi/CrawlerJobs/${encodeURIComponent(jobId)}/Stop`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${btoa(`${adminUsername}:${adminPassword}`)}`
-      }
-    });
-  } catch {
-    // Ignore. This is a cleanup attempt only.
-  }
-
-  currentCrawlerJobId = null;
-  sessionStorage.removeItem("qa_current_crawler_job_id");
-}

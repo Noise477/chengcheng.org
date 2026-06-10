@@ -33,6 +33,7 @@ const reportDetailsCard = document.getElementById("reportDetailsCard");
 const reportDetails = document.getElementById("reportDetails");
 const closeDetailsBtn = document.getElementById("closeDetailsBtn");
 const downloadPdfBtn = document.getElementById("downloadPdfBtn");
+const sendEmailBtn = document.getElementById("sendEmailBtn");
 
 let currentReportForPdf = null;
 
@@ -64,8 +65,10 @@ function init() {
   closeDetailsBtn.addEventListener("click", () => {
     reportDetailsCard.classList.add("hidden");
     downloadPdfBtn.classList.add("hidden");
+    sendEmailBtn.classList.add("hidden");
   });
   downloadPdfBtn.addEventListener("click", downloadCurrentReportPdf);
+  sendEmailBtn.addEventListener("click", sendCurrentReportEmail);
 
   closePhotoModalBtn.addEventListener("click", closePhotoModal);
   photoModal.addEventListener("click", (event) => {
@@ -279,6 +282,7 @@ async function loadReportDetails(id) {
 function renderReportDetails(report) {
   reportDetailsCard.classList.remove("hidden");
   downloadPdfBtn.classList.remove("hidden");
+  sendEmailBtn.classList.remove("hidden");
 
   const isFull = normalizeReportKind(report.reportKind) === "Full";
   const isEmailRecord = normalizeReportKind(report.reportKind) === "EmailRecord";
@@ -290,6 +294,7 @@ function renderReportDetails(report) {
       ${detailItem("Inspection type", report.inspectionTypeCode)}
       ${detailItem("Inspection date", formatDateTime(report.inspectionDate))}
       ${detailItem("Address", report.inspectionAddress || "No address recorded", true)}
+      ${detailItem("Email status", emailStatusText(report), true)}
       ${isEmailRecord ? detailItem("Email to", report.emailTo, true) : ""}
       ${isEmailRecord ? detailItem("Title", report.emailTitle, true) : ""}
       ${detailItem("LBP name", report.lbP_Name || report.lBP_Name || "N/A")}
@@ -447,6 +452,86 @@ function closePhotoModal() {
   photoModalDescription.textContent = "";
 }
 
+
+
+async function sendCurrentReportEmail() {
+  if (!currentReportForPdf) {
+    showMessage(searchMessage, "Please open a report before sending email.", "error");
+    return;
+  }
+
+  const auth = getSelectedSearchAuth();
+
+  if (!auth) {
+    showMessage(searchMessage, "Please sign in before sending email.", "error");
+    return;
+  }
+
+  const defaultTo = currentReportForPdf.emailTo || "";
+  const emailTo = window.prompt("Email to", defaultTo);
+
+  if (emailTo === null) {
+    return;
+  }
+
+  if (!emailTo.trim()) {
+    showMessage(searchMessage, "Email to is required.", "error");
+    return;
+  }
+
+  const defaultTitle = currentReportForPdf.emailTitle || `${currentReportForPdf.bcoNumber || "Report"} - ${reportKindLabel(currentReportForPdf.reportKind)}`;
+  const emailTitle = window.prompt("Email title", defaultTitle);
+
+  if (emailTitle === null) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/webapi/Reports/${encodeURIComponent(currentReportForPdf.id)}/SendEmail`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Basic ${btoa(`${auth.username}:${auth.password}`)}`
+      },
+      body: JSON.stringify({
+        emailTo: emailTo.trim(),
+        emailTitle: emailTitle.trim()
+      })
+    });
+
+    const text = await response.text();
+
+    if (!response.ok) {
+      showMessage(searchMessage, text || "Email could not be sent.", "error");
+      return;
+    }
+
+    showMessage(searchMessage, text || "Email sent successfully.", "ok");
+    await loadReportDetails(currentReportForPdf.id);
+  } catch {
+    showMessage(searchMessage, "Cannot connect to backend send-email endpoint.", "error");
+  }
+}
+
+function emailStatusText(report) {
+  const status = report.emailStatus || "NotRequired";
+  const sentAt = report.emailSentAt ? formatDateTime(report.emailSentAt) : "";
+  const error = report.emailError || "";
+
+  if (status === "Sent") {
+    return sentAt ? `Sent at ${sentAt}` : "Sent";
+  }
+
+  if (status === "Failed") {
+    return error ? `Failed: ${error}` : "Failed";
+  }
+
+  if (status === "NotRequired") {
+    return "Not required";
+  }
+
+  return status;
+}
 
 function downloadCurrentReportPdf() {
   if (!currentReportForPdf) {
@@ -760,6 +845,7 @@ function clearSearchFilters() {
   searchResultsCard.classList.add("hidden");
   reportDetailsCard.classList.add("hidden");
   downloadPdfBtn.classList.add("hidden");
+  sendEmailBtn.classList.add("hidden");
   showMessage(searchMessage, "Filters cleared.", "ok");
 }
 
