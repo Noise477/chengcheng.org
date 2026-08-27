@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost:5237";
+const API_BASE_URL = "https://api.chengcheng.org";
 
 let currentCrawlerJobId = null;
 let crawlerPollTimer = null;
