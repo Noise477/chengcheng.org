@@ -219,7 +219,6 @@
 
         <div class="button-row span-2">
           <button type="submit">Start crawler</button>
-          <button type="button" id="stopCrawlerBtn" class="secondary">Stop crawler</button>
         </div>
 
         <p id="crawlerMessage" class="message span-2"></p>
@@ -228,15 +227,8 @@
 
     <section id="crawlerLogCard" class="card wide hidden">
         <h2>Crawler progress</h2>
-
-        <div id="crawlerStatusSummary" class="crawler-status-summary"></div>
-
-        <div id="crawlerTimeline" class="crawler-timeline"></div>
-
-        <details class="crawler-details raw-log-details">
-            <summary>Technical details</summary>
-            <pre id="crawlerLog" class="json-preview"></pre>
-        </details>
+        <p class="hint">Up to five crawlers can run at the same time. Each crawler can be stopped independently.</p>
+        <div id="crawlerJobsContainer" class="crawler-status-summary"></div>
     </section>
   </main>
 

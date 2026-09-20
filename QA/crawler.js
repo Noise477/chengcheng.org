@@ -1,8 +1,7 @@
 const API_BASE_URL = "https://api.chengcheng.org";
 
-let currentCrawlerJobId = null;
+const crawlerJobs = new Map();
 let crawlerPollTimer = null;
-let currentCrawlerPayload = null;
 let crawlerTimeSlots = [];
 
 const adminStatus = document.getElementById("adminStatus");
@@ -20,10 +19,7 @@ const crawlerLogCard = document.getElementById("crawlerLogCard");
 
 const crawlerForm = document.getElementById("crawlerForm");
 const crawlerMessage = document.getElementById("crawlerMessage");
-const crawlerLog = document.getElementById("crawlerLog");
-const crawlerStatusSummary = document.getElementById("crawlerStatusSummary");
-const crawlerTimeline = document.getElementById("crawlerTimeline");
-const stopCrawlerBtn = document.getElementById("stopCrawlerBtn");
+const crawlerJobsContainer = document.getElementById("crawlerJobsContainer");
 
 const addTimeSlotBtn = document.getElementById("addTimeSlotBtn");
 const selectedTimeSlots = document.getElementById("selectedTimeSlots");
@@ -36,6 +32,7 @@ const councilPasswordSavedMessage = document.getElementById("councilPasswordSave
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
+  localStorage.removeItem("qa_current_crawler_job_id");
   loadSavedAdminAuth();
   setDefaultDate();
 
@@ -47,7 +44,6 @@ function init() {
 
   crawlerForm.addEventListener("submit", handleStartCrawler);
   crawlerSettingsForm.addEventListener("submit", handleSaveCrawlerSettings);
-  stopCrawlerBtn.addEventListener("click", handleStopCrawler);
   addTimeSlotBtn.addEventListener("click", addTimeSlot);
 }
 
@@ -83,12 +79,15 @@ async function handleAdminLogin(event) {
     sessionStorage.setItem("qa_admin_username", username);
     sessionStorage.setItem("qa_admin_password", password);
 
+    stopCrawlerPolling();
+    crawlerJobs.clear();
+    renderCrawlerJobs();
     updateAdminStatus();
     showMessage(adminLoginMessage, "Admin signed in successfully.", "ok");
     adminLoginDialog.close();
 
     await loadAdminCrawlerSettings();
-    await loadActiveCrawlerJob();
+    await loadActiveCrawlerJobs();
   } catch {
     showMessage(adminLoginMessage, "Cannot connect to backend. Check dotnet run and CORS.", "error");
   }
@@ -261,24 +260,12 @@ async function handleStartCrawler(event) {
     return;
   }
 
-  const activeJobFound = await loadActiveCrawlerJob({ silentWhenNone: true });
-
-  if (activeJobFound) {
-    showMessage(crawlerMessage, "A crawler job is already running for this admin account. The existing job is shown below.", "ok");
-    return;
-  }
-
   if (crawlerTimeSlots.length === 0) {
     showMessage(crawlerMessage, "Please add at least one preferred time slot.", "error");
     return;
   }
 
   const payload = buildCrawlerPayload();
-
-  currentCrawlerPayload = payload;
-
-  crawlerLogCard.classList.remove("hidden");
-  crawlerLog.textContent = JSON.stringify(payload, null, 2);
 
   try {
     const response = await fetch(`${API_BASE_URL}/webapi/CrawlerJobs/Start`, {
@@ -292,23 +279,25 @@ async function handleStartCrawler(event) {
 
     const text = await response.text();
 
-    if (response.status === 404) {
-      showMessage(crawlerMessage, "Crawler start endpoint has not been added yet.", "error");
-      return;
-    }
-
     if (response.status === 401 || response.status === 403) {
       showMessage(crawlerMessage, "Admin permission required.", "error");
       return;
     }
 
     if (!response.ok) {
-      showMessage(crawlerMessage, `Crawler failed to start (${response.status}): ${text}`, "error");
+      let detail = text;
+      try {
+        const parsed = JSON.parse(text);
+        detail = parsed.detail || parsed.message || text;
+      } catch {
+        // Keep plain-text response.
+      }
+
+      showMessage(crawlerMessage, `Crawler failed to start (${response.status}): ${detail}`, "error");
       return;
     }
 
     let result;
-
     try {
       result = JSON.parse(text);
     } catch {
@@ -316,28 +305,32 @@ async function handleStartCrawler(event) {
       return;
     }
 
-    currentCrawlerJobId = result.job_id || result.jobId || result.id;
+    const jobId = result.job_id || result.jobId || result.id;
 
-    if (currentCrawlerJobId) {
-        localStorage.setItem("qa_current_crawler_job_id", currentCrawlerJobId);
-    }
-
-    if (!currentCrawlerJobId) {
-      crawlerLog.textContent = JSON.stringify(result, null, 2);
+    if (!jobId) {
       showMessage(crawlerMessage, "Crawler started, but no job_id was returned.", "error");
       return;
     }
 
-    showMessage(crawlerMessage, `Crawler started. Job ID: ${currentCrawlerJobId}`, "ok");
-    crawlerLog.textContent = JSON.stringify(result, null, 2);
+    crawlerJobs.set(jobId, {
+      ...result,
+      job_id: jobId,
+      bco: result.bco || payload.bco,
+      inspection_value: result.inspection_value || payload.inspectionValue,
+      preferred_slots: payload.preferredSlots || []
+    });
 
-    startCrawlerPolling(currentCrawlerJobId);
+    renderCrawlerJobs();
+    ensureCrawlerPolling();
+
+    const activeCount = [...crawlerJobs.values()].filter((job) => !isTerminalCrawlerStatus(job.status)).length;
+    showMessage(crawlerMessage, `Crawler started for ${payload.bco}. ${activeCount} crawler(s) currently active.`, "ok");
   } catch {
     showMessage(crawlerMessage, "Cannot connect to backend crawler endpoint.", "error");
   }
 }
 
-async function handleStopCrawler() {
+async function handleStopCrawler(jobId) {
   const adminUsername = sessionStorage.getItem("qa_admin_username");
   const adminPassword = sessionStorage.getItem("qa_admin_password");
 
@@ -346,13 +339,17 @@ async function handleStopCrawler() {
     return;
   }
 
-  if (!currentCrawlerJobId) {
-    showMessage(crawlerMessage, "No crawler job is currently running.", "error");
+  if (!jobId) {
+    return;
+  }
+
+  const current = crawlerJobs.get(jobId);
+  if (current && isTerminalCrawlerStatus(current.status)) {
     return;
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/webapi/CrawlerJobs/${encodeURIComponent(currentCrawlerJobId)}/Stop`, {
+    const response = await fetch(`${API_BASE_URL}/webapi/CrawlerJobs/${encodeURIComponent(jobId)}/Stop`, {
       method: "POST",
       headers: {
         "Authorization": `Basic ${btoa(`${adminUsername}:${adminPassword}`)}`
@@ -371,35 +368,53 @@ async function handleStopCrawler() {
       return;
     }
 
-    showMessage(crawlerMessage, "Stop request sent. Waiting for crawler to stop...", "ok");
-
-    renderCrawlerJob({
-      job_id: currentCrawlerJobId,
+    crawlerJobs.set(jobId, {
+      ...(current || { job_id: jobId }),
       status: "stopping",
-      logs: ["[SYSTEM] stop requested"],
-      result: null
+      stop_requested: true
     });
 
-    startCrawlerPolling(currentCrawlerJobId);
+    renderCrawlerJobs();
+    ensureCrawlerPolling();
+    showMessage(crawlerMessage, `Stop request sent for ${current?.bco || jobId}.`, "ok");
   } catch {
     showMessage(crawlerMessage, "Cannot connect to backend stop endpoint.", "error");
   }
 }
 
-function startCrawlerPolling(jobId) {
-  stopCrawlerPolling();
+function ensureCrawlerPolling() {
+  if (crawlerPollTimer) {
+    return;
+  }
 
-  pollCrawlerJob(jobId);
-
-  crawlerPollTimer = window.setInterval(() => {
-    pollCrawlerJob(jobId);
-  }, 2000);
+  pollCrawlerJobs();
+  crawlerPollTimer = window.setInterval(pollCrawlerJobs, 2000);
 }
 
 function stopCrawlerPolling() {
   if (crawlerPollTimer) {
     window.clearInterval(crawlerPollTimer);
     crawlerPollTimer = null;
+  }
+}
+
+async function pollCrawlerJobs() {
+  const activeJobIds = [...crawlerJobs.entries()]
+    .filter(([, job]) => !isTerminalCrawlerStatus(job.status))
+    .map(([jobId]) => jobId);
+
+  if (activeJobIds.length === 0) {
+    stopCrawlerPolling();
+    renderCrawlerJobs();
+    return;
+  }
+
+  await Promise.all(activeJobIds.map((jobId) => pollCrawlerJob(jobId)));
+  renderCrawlerJobs();
+
+  const stillActive = [...crawlerJobs.values()].some((job) => !isTerminalCrawlerStatus(job.status));
+  if (!stillActive) {
+    stopCrawlerPolling();
   }
 }
 
@@ -423,104 +438,160 @@ async function pollCrawlerJob(jobId) {
     const text = await response.text();
 
     if (!response.ok) {
-      crawlerLogCard.classList.remove("hidden");
-      crawlerLog.textContent = `Polling failed (${response.status}): ${text}`;
+      const existing = crawlerJobs.get(jobId) || { job_id: jobId };
+
+      if (response.status === 404) {
+        crawlerJobs.set(jobId, {
+          ...existing,
+          status: "failed",
+          result: {
+            ok: false,
+            reason: "job_not_found",
+            error: "This crawler job is no longer available. The crawler service may have restarted."
+          },
+          poll_error: null
+        });
+      } else {
+        crawlerJobs.set(jobId, {
+          ...existing,
+          poll_error: `Polling failed (${response.status}): ${text}`
+        });
+      }
       return;
     }
 
-    let data;
+    const data = JSON.parse(text);
+    const existing = crawlerJobs.get(jobId) || {};
 
-    try {
-      data = JSON.parse(text);
-    } catch {
-      crawlerLogCard.classList.remove("hidden");
-      crawlerLog.textContent = text;
-      return;
-    }
-
-    renderCrawlerJob(data);
-
-    const status = String(data.status || data.state || "").toLowerCase();
-
-    if (
-        status === "done" ||
-        status === "finished" ||
-        status === "completed" ||
-        status === "success" ||
-        status === "failed" ||
-        status === "error" ||
-        status === "stopped" ||
-        status === "cancelled"
-    ) {
-        stopCrawlerPolling();
-        currentCrawlerJobId = null;
-        localStorage.removeItem("qa_current_crawler_job_id");
-
-        showMessage(
-            crawlerMessage,
-            `Crawler job finished with status: ${status}`,
-            status === "failed" || status === "error" ? "error" : "ok"
-        );
-    }
+    crawlerJobs.set(jobId, {
+      ...existing,
+      ...data,
+      job_id: data.job_id || data.jobId || jobId,
+      preferred_slots: existing.preferred_slots || []
+    });
   } catch {
-    crawlerLogCard.classList.remove("hidden");
-    crawlerLog.textContent = "Could not poll crawler job.";
+    const existing = crawlerJobs.get(jobId) || { job_id: jobId };
+    crawlerJobs.set(jobId, {
+      ...existing,
+      poll_error: "Could not poll crawler job."
+    });
   }
 }
 
-function renderCrawlerJob(data) {
-  crawlerLogCard.classList.remove("hidden");
-
-  const status = String(data.status || data.state || "unknown").toLowerCase();
-  const logs = normalizeCrawlerLogs(data.logs || data.log || []);
-  const result = data.result || data.output || null;
-
-  renderCrawlerStatus(status, result, data.job_id || data.jobId || currentCrawlerJobId);
-  renderCrawlerTimeline(logs, result);
-
-  crawlerLog.textContent = JSON.stringify(data, null, 2);
+function isTerminalCrawlerStatus(status) {
+  const value = String(status || "").toLowerCase();
+  return ["done", "finished", "completed", "success", "failed", "error", "stopped", "cancelled"].includes(value);
 }
 
-function renderCrawlerStatus(status, result, jobId) {
-  crawlerStatusSummary.innerHTML = "";
+function renderCrawlerJobs() {
+  if (!crawlerJobsContainer) {
+    return;
+  }
+
+  crawlerJobsContainer.innerHTML = "";
+
+  const jobs = [...crawlerJobs.values()].sort((a, b) => {
+    const aTime = String(a.created_at || "");
+    const bTime = String(b.created_at || "");
+    return bTime.localeCompare(aTime);
+  });
+
+  if (jobs.length === 0) {
+    crawlerLogCard.classList.add("hidden");
+    return;
+  }
+
+  crawlerLogCard.classList.remove("hidden");
+
+  jobs.forEach((job) => {
+    crawlerJobsContainer.appendChild(createCrawlerJobCard(job));
+  });
+}
+
+function createCrawlerJobCard(job) {
+  const jobId = job.job_id || job.jobId || job.id || "";
+  const status = String(job.status || "unknown").toLowerCase();
+  const logs = normalizeCrawlerLogs(job.logs || job.log || []);
+  const result = job.result || job.output || null;
+  const liveStatus = getCrawlerLiveStatus(logs, result, status, job.poll_error);
 
   const card = document.createElement("div");
   card.className = "crawler-status-card";
+  card.dataset.jobId = jobId;
 
   const pill = document.createElement("div");
   pill.className = `crawler-status-pill ${getCrawlerStatusClass(status)}`;
   pill.textContent = getCrawlerStatusLabel(status);
+  card.appendChild(pill);
 
   const title = document.createElement("h3");
-  title.textContent = getCrawlerStatusTitle(status, result);
-
-  const description = document.createElement("p");
-  description.textContent = getCrawlerStatusDescription(status, result, jobId);
-
-  card.appendChild(pill);
+  const bco = job.bco || "Crawler job";
+  const inspection = job.inspection_value || job.inspectionValue || "";
+  title.textContent = inspection ? `${bco} · ${getInspectionTypeLabel(inspection)}` : bco;
   card.appendChild(title);
-  card.appendChild(description);
 
-  crawlerStatusSummary.appendChild(card);
+  const meta = document.createElement("p");
+  meta.className = "hint";
+  const windows = formatJobWindows(job);
+  meta.textContent = windows ? `Preferred: ${windows}` : `Job ID: ${jobId}`;
+  card.appendChild(meta);
+
+  const timeline = document.createElement("div");
+  timeline.className = "crawler-timeline";
+  timeline.appendChild(createTimelineItem(liveStatus.kind, liveStatus.title, liveStatus.description));
+  card.appendChild(timeline);
+
+  if (!isTerminalCrawlerStatus(status)) {
+    const buttonRow = document.createElement("div");
+    buttonRow.className = "button-row";
+
+    const stopButton = document.createElement("button");
+    stopButton.type = "button";
+    stopButton.className = "secondary";
+    stopButton.textContent = status === "stopping" ? "Stopping…" : "Stop crawler";
+    stopButton.disabled = status === "stopping";
+    stopButton.addEventListener("click", () => handleStopCrawler(jobId));
+
+    buttonRow.appendChild(stopButton);
+    card.appendChild(buttonRow);
+  }
+
+  const details = document.createElement("details");
+  details.className = "crawler-details raw-log-details";
+
+  const summary = document.createElement("summary");
+  summary.textContent = "Technical details";
+
+  const pre = document.createElement("pre");
+  pre.className = "json-preview";
+  pre.textContent = JSON.stringify(job, null, 2);
+
+  details.appendChild(summary);
+  details.appendChild(pre);
+  card.appendChild(details);
+
+  return card;
 }
 
-function renderCrawlerTimeline(logs, result) {
-  crawlerTimeline.innerHTML = "";
+function getCrawlerLiveStatus(logs, result, status, pollError) {
+  if (pollError) {
+    return {
+      kind: "warning",
+      title: "Progress update delayed",
+      description: pollError
+    };
+  }
 
-  const liveStatus = getCrawlerLiveStatus(logs, result);
-
-  crawlerTimeline.appendChild(
-    createTimelineItem(
-      liveStatus.kind,
-      liveStatus.title,
-      liveStatus.description
-    )
-  );
-}
-
-function getCrawlerLiveStatus(logs, result) {
   if (result) {
-    return parseCrawlerResult(result);
+    return parseCrawlerResult(result, status);
+  }
+
+  if (status === "stopping") {
+    return {
+      kind: "warning",
+      title: "Crawler is stopping",
+      description: "Stop request sent. The current browser operation will exit safely."
+    };
   }
 
   const latestLog = getLatestUsefulCrawlerLog(logs);
@@ -535,18 +606,19 @@ function getCrawlerLiveStatus(logs, result) {
 
   const lower = latestLog.toLowerCase();
 
-  if (
-    lower.includes("no_slot") ||
-    lower.includes("no slot") ||
-    lower.includes("no available") ||
-    lower.includes("no availability")
-  ) {
+  if (lower.includes("start stagger")) {
+    return {
+      kind: "running",
+      title: "Crawler is queued to start",
+      description: cleanCrawlerLogText(latestLog)
+    };
+  }
+
+  if (lower.includes("no_slot") || lower.includes("no slot") || lower.includes("no available") || lower.includes("no availability")) {
     return {
       kind: "running",
       title: "Checking available time slots",
-      description: buildLastAttemptDescription(
-        "No available slot in selected preferred windows."
-      )
+      description: buildLastAttemptDescription("No available slot in selected preferred windows.")
     };
   }
 
@@ -574,14 +646,6 @@ function getCrawlerLiveStatus(logs, result) {
     };
   }
 
-  if (lower.includes("safe mode")) {
-    return {
-      kind: "warning",
-      title: "Safe mode is enabled",
-      description: "The crawler will not submit a final booking action."
-    };
-  }
-
   if (lower.includes("error") || lower.includes("exception") || lower.includes("failed")) {
     return {
       kind: "error",
@@ -597,66 +661,6 @@ function getCrawlerLiveStatus(logs, result) {
   };
 }
 
-function getLatestUsefulCrawlerLog(logs) {
-  if (!Array.isArray(logs) || logs.length === 0) {
-    return "";
-  }
-
-  for (let i = logs.length - 1; i >= 0; i--) {
-    const line = String(logs[i]).trim();
-
-    if (line.length > 0) {
-      return line;
-    }
-  }
-
-  return "";
-}
-
-function buildLastAttemptDescription(reason) {
-  const lastAttempt = formatCurrentDateTime();
-
-  return `Last attempt: ${lastAttempt}. \nReason: ${reason}`;
-}
-
-function formatCurrentDateTime() {
-  const now = new Date();
-
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const hour = String(now.getHours()).padStart(2, "0");
-  const minute = String(now.getMinutes()).padStart(2, "0");
-
-  return `${year}-${month}-${day} ${hour}:${minute}`;
-}
-
-function createTimelineItem(kind, title, description) {
-  const item = document.createElement("div");
-  item.className = `crawler-timeline-item ${kind}`;
-
-  const icon = document.createElement("div");
-  icon.className = "crawler-timeline-icon";
-  icon.textContent = getTimelineIcon(kind);
-
-  const content = document.createElement("div");
-  content.className = "crawler-timeline-content";
-
-  const titleElement = document.createElement("strong");
-  titleElement.textContent = title;
-
-  const descriptionElement = document.createElement("span");
-  descriptionElement.textContent = description;
-
-  content.appendChild(titleElement);
-  content.appendChild(descriptionElement);
-
-  item.appendChild(icon);
-  item.appendChild(content);
-
-  return item;
-}
-
 function normalizeCrawlerLogs(logs) {
   if (Array.isArray(logs)) {
     return logs.map((line) => String(line)).filter((line) => line.trim().length > 0);
@@ -669,32 +673,34 @@ function normalizeCrawlerLogs(logs) {
   return [];
 }
 
-function parseCrawlerResult(result) {
+function getLatestUsefulCrawlerLog(logs) {
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const line = String(logs[i]).trim();
+    if (line.length > 0) {
+      return line;
+    }
+  }
+  return "";
+}
+
+function parseCrawlerResult(result, status) {
+  if (result.reason === "stopped_by_user" || status === "stopped") {
+    return {
+      kind: "warning",
+      title: "Crawler stopped",
+      description: "The crawler was stopped by the user."
+    };
+  }
+
   if (result.ok === true) {
     return {
       kind: "success",
-      title: "Crawler finished",
+      title: result.reason === "FINAL_SUBMITTED" ? "Booking submitted" : "Crawler finished",
       description: summarizeCrawlerResult(result)
     };
   }
 
   if (result.ok === false) {
-    const reason = String(result.reason || result.error || "").toLowerCase();
-
-    if (
-      reason.includes("no_slot") ||
-      reason.includes("no slot") ||
-      reason.includes("no available")
-    ) {
-      return {
-        kind: "running",
-        title: "Checking available time slots",
-        description: buildLastAttemptDescription(
-          "No available slot in selected preferred windows."
-        )
-      };
-    }
-
     return {
       kind: "error",
       title: "Crawler failed",
@@ -714,12 +720,17 @@ function summarizeCrawlerResult(result) {
     return "No result returned.";
   }
 
-  if (result.reason === "stopped_by_user") {
-    return "The crawler was stopped by the user.";
+  if (result.reason === "FINAL_SUBMITTED") {
+    const ref = result.booking_reference || result.bookingReference;
+    return ref ? `Booking submitted. Reference: ${ref}.` : "Booking submitted successfully.";
   }
 
-  if (result.safe_mode || result.safeMode) {
-    return "Safe mode was enabled, so no final booking action was submitted.";
+  if (result.reason === "SAFE_MODE_STOPPED_ON_SUMMARY") {
+    return "Safe mode reached the booking summary without submitting the final booking.";
+  }
+
+  if (result.reason === "stopped_by_user") {
+    return "The crawler was stopped by the user.";
   }
 
   if (result.message) {
@@ -730,119 +741,114 @@ function summarizeCrawlerResult(result) {
     return `Result reason: ${result.reason}`;
   }
 
-  if (result.ok === true) {
-    return "The crawler completed successfully.";
-  }
-
-  return "The crawler returned a result. Open Technical details for the raw response.";
-}
-
-function cleanCrawlerLogText(text) {
-  return String(text)
-    .replace(/^\[[^\]]+\]\s*/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  return result.ok === true ? "The crawler completed successfully." : "The crawler returned a result.";
 }
 
 function getCrawlerStatusClass(status) {
-  if (status === "finished" || status === "done" || status === "completed" || status === "success") {
+  if (["finished", "done", "completed", "success"].includes(status)) {
     return "crawler-status-finished";
   }
-
-  if (status === "failed" || status === "error") {
+  if (["failed", "error"].includes(status)) {
     return "crawler-status-failed";
   }
-
-  if (status === "stopped" || status === "cancelled") {
+  if (["stopped", "cancelled"].includes(status)) {
     return "crawler-status-stopped";
   }
-
   return "crawler-status-running";
 }
 
 function getCrawlerStatusLabel(status) {
-  if (status === "stopping") {
-    return "Stopping";
-  }
-
-  if (status === "finished" || status === "done" || status === "completed" || status === "success") {
-    return "Finished";
-  }
-
-  if (status === "failed" || status === "error") {
-    return "Failed";
-  }
-
-  if (status === "stopped" || status === "cancelled") {
-    return "Stopped";
-  }
-
+  if (status === "stopping") return "Stopping";
+  if (["finished", "done", "completed", "success"].includes(status)) return "Finished";
+  if (["failed", "error"].includes(status)) return "Failed";
+  if (["stopped", "cancelled"].includes(status)) return "Stopped";
   return "Running";
 }
 
-function getCrawlerStatusTitle(status, result) {
-  if (status === "stopping") {
-    return "The crawler is stopping.";
-  }
-  if (status === "failed" || status === "error") {
-    return "The crawler could not complete the request.";
-  }
+function createTimelineItem(kind, title, description) {
+  const item = document.createElement("div");
+  item.className = `crawler-timeline-item ${kind}`;
 
-  if (status === "stopped" || status === "cancelled") {
-    return "The crawler was stopped.";
-  }
+  const icon = document.createElement("div");
+  icon.className = "crawler-timeline-icon";
+  icon.textContent = kind === "success" ? "✓" : kind === "error" || kind === "warning" ? "!" : "…";
 
-  if (status === "finished" || status === "done" || status === "completed" || status === "success") {
-    if (result && result.safe_mode) {
-      return "The crawler finished in safe mode.";
-    }
+  const content = document.createElement("div");
+  content.className = "crawler-timeline-content";
 
-    return "The crawler finished.";
-  }
+  const titleElement = document.createElement("strong");
+  titleElement.textContent = title;
 
-  return "The crawler is currently running.";
+  const descriptionElement = document.createElement("span");
+  descriptionElement.textContent = description;
+
+  content.appendChild(titleElement);
+  content.appendChild(descriptionElement);
+  item.appendChild(icon);
+  item.appendChild(content);
+  return item;
 }
 
-function getCrawlerStatusDescription(status, result, jobId) {
-  const idText = jobId ? `Job ID: ${jobId}. ` : "";
-
-  if (status === "failed" || status === "error") {
-    const errorText = result && (result.error || result.reason)
-      ? `${result.error || result.reason}`
-      : "Check the technical details for the raw error.";
-
-    return `${idText}${errorText}`;
-  }
-
-  if (status === "finished" || status === "done" || status === "completed" || status === "success") {
-    return `${idText}${summarizeCrawlerResult(result)}`;
-  }
-
-  if (status === "stopping") {
-    return `${idText}Stop request has been sent. Waiting for the crawler to exit safely.`;
-  }
-
-  if (status === "stopped" || status === "cancelled") {
-    return `${idText}The stop request has been processed.`;
-  }
-
-  return `${idText}Progress will update automatically.`;
+function buildLastAttemptDescription(reason) {
+  return `Last attempt: ${formatCurrentDateTime()}. \nReason: ${reason}`;
 }
 
-function getTimelineIcon(kind) {
-  if (kind === "success") {
-    return "✓";
+function formatCurrentDateTime() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hour = String(now.getHours()).padStart(2, "0");
+  const minute = String(now.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function cleanCrawlerLogText(text) {
+  return String(text).replace(/^\[[^\]]+\]\s*/g, "").replace(/\s+/g, " ").trim();
+}
+
+function getInspectionTypeLabel(value) {
+  const labels = {
+    IME: "Site meeting (IME)",
+    ICL: "Cladding (ICL)",
+    IFG: "Framing (IFG)",
+    IPB: "Preline building (IPB)",
+    ISF: "Concrete floor slab (ISF)",
+    IFO: "Foundations / footings (IFO)",
+    IF1: "Final inspection - residential (IF1)",
+    IF2: "Final inspection - commercial (IF2)",
+    ICB: "Concrete block (ICB)",
+    ITK: "Waterproofing membrane (ITK)",
+    ICA: "Cavity wrap (ICA)",
+    IPP: "Plumbing (IPP)",
+    IPL: "Postline (IPL)",
+    IDT: "Drainage (IDT)",
+    CPU: "Certificate of public use (CPU)",
+    PCO: "Pre-construction commercial (PCO)"
+  };
+  return labels[value] || value;
+}
+
+function formatJobWindows(job) {
+  if (Array.isArray(job.preferred_slots) && job.preferred_slots.length > 0) {
+    return job.preferred_slots.map(formatTimeSlotLabel).join(", ");
   }
 
-  if (kind === "error") {
-    return "!";
+  if (Array.isArray(job.prefer_windows) && job.prefer_windows.length > 0) {
+    return job.prefer_windows.map(formatRawPreferWindow).join(", ");
   }
 
-  if (kind === "warning") {
-    return "!";
+  return "";
+}
+
+function formatRawPreferWindow(raw) {
+  const match = String(raw || "").match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})T(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/);
+  if (!match) {
+    return String(raw || "");
   }
 
-  return "…";
+  const [, y, m, d, sh, sm, , , , eh, em] = match;
+  return `${y}-${m}-${d} ${sh}:${sm}-${eh}:${em}`;
 }
 
 function buildCrawlerPayload() {
@@ -941,18 +947,17 @@ async function loadSavedAdminAuth() {
 
   if (adminUsername && adminPassword) {
     await loadAdminCrawlerSettings();
-    await loadActiveCrawlerJob();
+    await loadActiveCrawlerJobs();
   }
 }
 
-async function loadActiveCrawlerJob(options = {}) {
+async function loadActiveCrawlerJobs(options = {}) {
   const silentWhenNone = Boolean(options.silentWhenNone);
-
   const adminUsername = sessionStorage.getItem("qa_admin_username");
   const adminPassword = sessionStorage.getItem("qa_admin_password");
 
   if (!adminUsername || !adminPassword) {
-    return false;
+    return 0;
   }
 
   try {
@@ -965,67 +970,63 @@ async function loadActiveCrawlerJob(options = {}) {
 
     const text = await response.text();
 
-    if (response.status === 404) {
-      if (!silentWhenNone) {
-        showMessage(crawlerMessage, "Active crawler endpoint has not been added yet.", "error");
-      }
-      return false;
-    }
-
     if (response.status === 401 || response.status === 403) {
       if (!silentWhenNone) {
         showMessage(crawlerMessage, "Admin permission required.", "error");
       }
-      return false;
+      return 0;
     }
 
     if (!response.ok) {
       if (!silentWhenNone) {
-        showMessage(crawlerMessage, `Could not check active crawler (${response.status}): ${text}`, "error");
+        showMessage(crawlerMessage, `Could not check active crawlers (${response.status}): ${text}`, "error");
       }
-      return false;
+      return 0;
     }
 
     let data;
-
     try {
       data = JSON.parse(text);
     } catch {
       if (!silentWhenNone) {
         showMessage(crawlerMessage, "Active crawler response was not JSON.", "error");
       }
-      return false;
+      return 0;
     }
 
-    const job = data.job || null;
+    const activeJobs = Array.isArray(data.jobs)
+      ? data.jobs
+      : (data.job ? [data.job] : []);
 
-    if (!data.has_active_job || !job) {
-      currentCrawlerJobId = null;
-      localStorage.removeItem("qa_current_crawler_job_id");
-      return false;
+    activeJobs.forEach((job) => {
+      const jobId = job.job_id || job.jobId || job.id;
+      if (!jobId) {
+        return;
+      }
+
+      const existing = crawlerJobs.get(jobId) || {};
+      crawlerJobs.set(jobId, {
+        ...existing,
+        ...job,
+        job_id: jobId
+      });
+    });
+
+    renderCrawlerJobs();
+
+    if (activeJobs.length > 0) {
+      ensureCrawlerPolling();
+      if (!silentWhenNone) {
+        showMessage(crawlerMessage, `${activeJobs.length} active crawler job(s) restored.`, "ok");
+      }
     }
 
-    currentCrawlerJobId = job.job_id || job.jobId || job.id;
-
-    if (!currentCrawlerJobId) {
-      return false;
-    }
-
-    localStorage.setItem("qa_current_crawler_job_id", currentCrawlerJobId);
-
-    renderCrawlerJob(job);
-    startCrawlerPolling(currentCrawlerJobId);
-
-    if (!silentWhenNone) {
-      showMessage(crawlerMessage, "An active crawler job was found for this admin account.", "ok");
-    }
-
-    return true;
+    return activeJobs.length;
   } catch {
     if (!silentWhenNone) {
-      showMessage(crawlerMessage, "Could not connect to backend to check active crawler.", "error");
+      showMessage(crawlerMessage, "Could not connect to backend to check active crawlers.", "error");
     }
-    return false;
+    return 0;
   }
 }
 
@@ -1039,6 +1040,9 @@ function clearAdminAuth() {
 function clearAdminSavedAuth() {
   sessionStorage.removeItem("qa_admin_username");
   sessionStorage.removeItem("qa_admin_password");
+  stopCrawlerPolling();
+  crawlerJobs.clear();
+  renderCrawlerJobs();
   updateAdminStatus();
 }
 
