@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://api.chengcheng.org";
+const API_BASE_URL = "http://localhost:5237";
 
 const crawlerJobs = new Map();
 let crawlerPollTimer = null;
@@ -860,6 +860,8 @@ function buildCrawlerPayload() {
       preferredDate: slot.date,
       preferredWindow: slot.window
     })),
+
+    readyEarlier: checked("readyEarlier"),
 
     contactOverride: {
       name: valueOf("contactName"),

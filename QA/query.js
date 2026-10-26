@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://api.chengcheng.org";
+const API_BASE_URL = "http://localhost:5237";
 
 const userStatus = document.getElementById("userStatus");
 const adminStatus = document.getElementById("adminStatus");
